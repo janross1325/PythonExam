@@ -7,6 +7,7 @@ import cloudinary
 import cloudinary.uploader
 import cloudinary.api
 from bcrypt import checkpw
+from bson import ObjectId
 from fastapi.security import HTTPBasicCredentials, HTTPBasic
 
 from pexels_api import API
@@ -18,7 +19,7 @@ from starlette.status import HTTP_401_UNAUTHORIZED
 from core.config import settings
 import requests
 
-from schemas.images import ImageUpdate
+from schemas.images import ImageUpdate, ImageCreate
 
 router = APIRouter()
 
@@ -36,8 +37,8 @@ logging.basicConfig(level=logging.DEBUG)
 
 security = HTTPBasic()
 
-def get_current_username(credentials: HTTPBasicCredentials = Depends(security)):
 
+def get_current_username(credentials: HTTPBasicCredentials = Depends(security)):
     check_exist = mydb["users"].find_one({"email": credentials.username})
 
     correct_username = secrets.compare_digest(credentials.username, check_exist["email"])
@@ -90,7 +91,7 @@ def get_images(creds: str = Depends(get_current_username)):
                                            public_id=photos_dict[photo.id]["alt"],
                                            overwrite=True,
                                            resource_type="image")
-                mydb["images"].insert_one(photos_dict[photo.id]) # insert to db after upload
+                mydb["images"].insert_one(photos_dict[photo.id])  # insert to db after upload
                 img_data.append(photos_dict[photo.id])
             except Exception as e:
                 logging.error(e, exc_info=True)
@@ -104,6 +105,7 @@ def get_images(creds: str = Depends(get_current_username)):
     else:
         raise HTTPException(status_code=401, detail="Unauthorize access!")
 
+
 @router.get("/get_image/{image_id}")
 def get_image(image_id: int, creds: str = Depends(get_current_username), ):
     if creds["success"]:
@@ -114,6 +116,7 @@ def get_image(image_id: int, creds: str = Depends(get_current_username), ):
             raise HTTPException(status_code=401, detail="Unauthorize access on the item")
     else:
         raise HTTPException(status_code=401, detail="Unauthorize access!")
+
 
 @router.patch("/update_image/{image_id}")
 def update_image(image_id: int, image: ImageUpdate, creds: str = Depends(get_current_username), ):
@@ -126,5 +129,34 @@ def update_image(image_id: int, image: ImageUpdate, creds: str = Depends(get_cur
             return "Update success"
         else:
             raise HTTPException(status_code=401, detail="Unauthorize access on the item")
+    else:
+        raise HTTPException(status_code=401, detail="Unauthorize access!")
+
+
+@router.post("/create_image")
+def create_image(image: ImageCreate, creds: str = Depends(get_current_username), ):
+    if creds["success"]:
+        query_user = mydb["users"].find_one({"email": creds["username"]})
+        data = {"hits": 1, "url": image.url}
+        if query_user["is_superuser"]:
+            if image.owner is not None:
+                check_to_assign = mydb["users"].find_one(
+                    {"email": image.owner})  # check if the user to be assigned exist
+                if check_to_assign:
+                    owner = image.owner
+                else:
+                    raise HTTPException(status_code=404, detail="User not found")
+            else:
+                owner = creds["username"]
+            data.update({"owner": owner})
+
+        else:
+            data.update({"owner": creds["username"]})
+
+        inserted = mydb["images"].insert_one(data)
+
+        mydb["images"].update_one({"_id": ObjectId(inserted.inserted_id)},
+                                  {"$set": {"id": str(inserted.inserted_id)}})
+        return "Create image success"
     else:
         raise HTTPException(status_code=401, detail="Unauthorize access!")
