@@ -7,6 +7,7 @@ pydantic[email]
 python-jose
 python-multipart
 requests
+gunicorn
 
 # for image processing
 pexels-api
