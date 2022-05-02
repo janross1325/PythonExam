@@ -30,8 +30,8 @@ cloudinary.config(
     secure=True
 )
 
-myclient = pymongo.MongoClient("localhost")
-mydb = myclient["ImgProcess"]
+myclient = pymongo.MongoClient(settings.MONGO_DB_SERVER)
+mydb = myclient[settings.MONGO_DB_NAME]
 
 logging.basicConfig(level=logging.DEBUG)
 
@@ -59,21 +59,24 @@ def get_current_username(credentials: HTTPBasicCredentials = Depends(security)):
 
 
 @router.get("/get_images", status_code=200)
-def get_images(creds: str = Depends(get_current_username)):
+def get_images(creds: str = Depends(get_current_username), limit: int = 0):
     if creds["success"]:
         from random import randrange
-        print(creds)
+
         default_count = 5
-        hard_limit = 10
-        random_page = randrange(10)
+        if limit > default_count:
+            count = limit
+        else:
+            count = default_count
+
+        random_page = randrange(50) # random upto 50 pages
 
         PEXELS_API_KEY = settings.PEXEL_API_KEY
         api = API(PEXELS_API_KEY)
-        # query = r.get_random_word()  # search query
-        photos_dict = {}
-        counter = 0
 
-        api.curated(results_per_page=1, page=random_page)
+        photos_dict = {}
+
+        api.curated(results_per_page=count, page=random_page)
         photos = api.get_entries()
 
         img_data = []
@@ -96,11 +99,11 @@ def get_images(creds: str = Depends(get_current_username)):
             except Exception as e:
                 logging.error(e, exc_info=True)
                 return str(e)
-            counter += 1
+
             if not api.has_next_page:
                 break
 
-        result = JSONResponse({"limit": default_count, "data": img_data})
+        result = JSONResponse({"limit": count, "data": img_data})
         return result
     else:
         raise HTTPException(status_code=401, detail="Unauthorize access!")
