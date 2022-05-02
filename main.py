@@ -1,5 +1,3 @@
-from typing import Optional
-
 import pymongo
 from fastapi import FastAPI
 
@@ -11,10 +9,10 @@ def include_router(app):
     app.include_router(api_router)
 
 def start_application():
-    app = FastAPI(title=settings.PROJECT_NAME, version=settings.PROJECT_VERSION)
+    app = FastAPI()
     include_router(app)
-    myclient = pymongo.MongoClient("localhost")
-    mydb = myclient["ImgProcess"]
+    myclient = pymongo.MongoClient(settings.MONGO_DB_SERVER)
+    mydb = myclient[settings.MONGO_DB_NAME] # this will create a DB
     return app
 
 
