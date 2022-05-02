@@ -1,6 +1,5 @@
 import logging
 import secrets
-from http.client import HTTPException
 
 import pymongo
 import tqdm
@@ -12,12 +11,14 @@ from fastapi.security import HTTPBasicCredentials, HTTPBasic
 
 from pexels_api import API
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from starlette.responses import JSONResponse
 from starlette.status import HTTP_401_UNAUTHORIZED
 
 from core.config import settings
 import requests
+
+from schemas.images import ImageUpdate
 
 router = APIRouter()
 
@@ -50,7 +51,10 @@ def get_current_username(credentials: HTTPBasicCredentials = Depends(security)):
         )
         return {"message": "Unauthorized user", "success": False, }
     else:
-        return {"message": "User authenticated", "success": True, "username": credentials.username}
+        return {"message": "User authenticated",
+                "success": True,
+                "username": credentials.username,
+                "is_superuser": check_exist["is_superuser"]}
 
 
 @router.get("/get_images")
@@ -58,7 +62,7 @@ def get_images(creds: str = Depends(get_current_username)):
     if creds["success"]:
         from random import randrange
         print(creds)
-        default_count = 1
+        default_count = 5
         hard_limit = 10
         random_page = randrange(10)
 
@@ -66,11 +70,8 @@ def get_images(creds: str = Depends(get_current_username)):
         api = API(PEXELS_API_KEY)
         # query = r.get_random_word()  # search query
         photos_dict = {}
-        page = 1
         counter = 0
-        # print(query, random_page)
-        # Step 1: Getting urls and meta information
-        # api.search(query, page=random_page, results_per_page=default_count)
+
         api.curated(results_per_page=1, page=random_page)
         photos = api.get_entries()
 
@@ -97,8 +98,33 @@ def get_images(creds: str = Depends(get_current_username)):
             counter += 1
             if not api.has_next_page:
                 break
-            page += 1
+
         result = JSONResponse({"limit": default_count, "data": img_data})
         return result
     else:
-        return "User not authenticated"
+        raise HTTPException(status_code=401, detail="Unauthorize access!")
+
+@router.get("/get_image/{image_id}")
+def get_image(image_id: int, creds: str = Depends(get_current_username), ):
+    if creds["success"]:
+        get_image = mydb["images"].find_one({"id": image_id})
+        if get_image["owner"] == creds["username"]:
+            mydb["images"].update_one({"id": image_id}, {"$set": {"hits": get_image["hits"] + 1}})
+        else:
+            raise HTTPException(status_code=401, detail="Unauthorize access on the item")
+    else:
+        raise HTTPException(status_code=401, detail="Unauthorize access!")
+
+@router.patch("/update_image/{image_id}")
+def update_image(image_id: int, image: ImageUpdate, creds: str = Depends(get_current_username), ):
+    if creds["success"]:
+        query_image = mydb["images"].find_one({"id": image_id})
+        if query_image["owner"] == creds["username"]:
+            mydb["images"].update_one({"id": image_id},
+                                      {"$set": {"hits": image.hits,
+                                                "url": image.url}})
+            return "Update success"
+        else:
+            raise HTTPException(status_code=401, detail="Unauthorize access on the item")
+    else:
+        raise HTTPException(status_code=401, detail="Unauthorize access!")
