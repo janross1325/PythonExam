@@ -58,7 +58,7 @@ def get_current_username(credentials: HTTPBasicCredentials = Depends(security)):
                 "is_superuser": check_exist["is_superuser"]}
 
 
-@router.get("/get_images")
+@router.get("/get_images", status_code=200)
 def get_images(creds: str = Depends(get_current_username)):
     if creds["success"]:
         from random import randrange
@@ -106,12 +106,19 @@ def get_images(creds: str = Depends(get_current_username)):
         raise HTTPException(status_code=401, detail="Unauthorize access!")
 
 
-@router.get("/get_image/{image_id}")
+@router.get("/get_image/{image_id}", status_code=200)
 def get_image(image_id: int, creds: str = Depends(get_current_username), ):
     if creds["success"]:
-        get_image = mydb["images"].find_one({"id": image_id})
+        query_image = mydb["images"].find_one({"id": image_id})
         if get_image["owner"] == creds["username"]:
-            mydb["images"].update_one({"id": image_id}, {"$set": {"hits": get_image["hits"] + 1}})
+            is_admin = mydb["users"].find_one({"email": creds["username"]})
+            if is_admin["is_superuser"]:
+                mydb["images"].update_one({"id": image_id}, {"$set": {"hits": get_image["hits"] + 1}})
+            else:
+                if "status" in query_image and query_image["status"] == "DELETED":
+                    raise HTTPException(status_code=404, detail="Item not found")
+                else:
+                    mydb["images"].update_one({"id": image_id}, {"$set": {"hits": get_image["hits"] + 1}})
         else:
             raise HTTPException(status_code=401, detail="Unauthorize access on the item")
     else:
@@ -133,7 +140,7 @@ def update_image(image_id: int, image: ImageUpdate, creds: str = Depends(get_cur
         raise HTTPException(status_code=401, detail="Unauthorize access!")
 
 
-@router.post("/create_image")
+@router.post("/create_image", status_code=201)
 def create_image(image: ImageCreate, creds: str = Depends(get_current_username), ):
     if creds["success"]:
         query_user = mydb["users"].find_one({"email": creds["username"]})
@@ -158,5 +165,19 @@ def create_image(image: ImageCreate, creds: str = Depends(get_current_username),
         mydb["images"].update_one({"_id": ObjectId(inserted.inserted_id)},
                                   {"$set": {"id": str(inserted.inserted_id)}})
         return "Create image success"
+    else:
+        raise HTTPException(status_code=401, detail="Unauthorize access!")
+
+
+@router.delete("/delete_image/{image_id}")
+def delete_image(image_id: int, creds: str = Depends(get_current_username), ):
+    if creds["success"]:
+        query_image = mydb["images"].find_one({"id": image_id})
+        if query_image["owner"] == creds["username"]:
+            mydb["images"].update_one({"id": image_id},
+                                      {"$set": {"status": "DELETED"}})
+            return "Image Deleted"
+        else:
+            raise HTTPException(status_code=401, detail="Unauthorize access on the item")
     else:
         raise HTTPException(status_code=401, detail="Unauthorize access!")
